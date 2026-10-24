@@ -11,5 +11,8 @@ const state = params.get('state');
 if (params.get('error') === 'access_denied') go('?login=denied');
 else if (!code || !state) go('?login=error');
 else {
-  createApi().exchange(code, state).then(() => go(''), () => go('?login=error'));
+  createApi().exchange(code, state).then(
+    () => go(''),
+    (e) => go('?login=error&why=' + encodeURIComponent(String((e && e.data && e.data.why) || (e && e.code) || 'network')).slice(0, 60)),
+  );
 }

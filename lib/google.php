@@ -25,6 +25,7 @@ function np_token_request(array $params): ?array {
     $params += ['client_id' => $c['client_id'], 'client_secret' => $c['client_secret']];
     $r = np_http('POST', 'https://oauth2.googleapis.com/token', ['Content-Type: application/x-www-form-urlencoded'], http_build_query($params));
     $d = json_decode($r['body'], true);
+    $GLOBALS['np_token_error'] = is_array($d) && isset($d['error']) ? substr(preg_replace('/[^a-z_]/', '', (string) $d['error']), 0, 40) : 'http_' . $r['status'];
     return ($r['status'] === 200 && is_array($d) && isset($d['access_token'])) ? $d : null;
 }
 

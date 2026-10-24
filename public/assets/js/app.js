@@ -434,7 +434,7 @@ window.addEventListener('beforeunload', (e) => {
 // ---------- Início ----------
 const params = new URLSearchParams(location.search);
 if (params.has('login')) {
-  toast(params.get('login') === 'denied' ? 'Login cancelado. Você continua em modo local.' : 'Não foi possível entrar com o Google. Tente novamente.');
+  toast(params.get('login') === 'denied' ? 'Login cancelado. Você continua em modo local.' : 'Não foi possível entrar com o Google. Tente novamente.' + (params.get('why') ? ` (${params.get('why').replace(/[^\w-]/g, '').slice(0, 40)})` : ''));
   history.replaceState(null, '', location.pathname);
 }
 persist();
