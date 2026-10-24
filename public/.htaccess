@@ -6,11 +6,6 @@ Options -Indexes
 </FilesMatch>
 <Files "api.php">
     Require all granted
-    # O callback OAuth do Google traz URLs na query string (iss, scope), o que dispara regras
-    # de inclusão remota do ModSecurity (HTTP 406). A API valida a própria entrada.
-    <IfModule security2_module>
-        SecRuleEngine Off
-    </IfModule>
 </Files>
 <FilesMatch "^\.">
     Require all denied
