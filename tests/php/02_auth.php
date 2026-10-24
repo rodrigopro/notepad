@@ -120,3 +120,19 @@ test('http: bloqueia hosts fora da allowlist e http', function () {
         ok($thrown, $u);
     }
 });
+
+test('auth/exchange: userinfo falha → usa o id_token (iss/aud conferidos)', function () {
+    reset_env(); $log = [];
+    $b64 = fn(array $a) => rtrim(strtr(base64_encode(json_encode($a)), '+/', '-_'), '=');
+    $mk = fn(string $aud) => 'h.' . $b64(['iss' => 'https://accounts.google.com', 'aud' => $aud, 'sub' => '77', 'name' => 'Bia']) . '.s';
+    foreach (['cid' => 200, 'outro' => 400] as $aud => $want) {
+        fake_google($log, [
+            'userinfo' => ['status' => 401, 'body' => '{}'],
+            '/token' => ['status' => 200, 'body' => json_encode(['access_token' => 'AT', 'refresh_token' => 'R', 'id_token' => $mk($aud)])],
+        ]);
+        $start = np_dispatch(req(['query' => ['r' => 'auth/start']]));
+        $oauth = cookie_value($start, '__Host-notepad-oauth');
+        $r = np_dispatch(exchange_req($oauth, ['code' => 'abc', 'state' => np_open($oauth, 'oauth')['state']]));
+        eq($r['status'], $want);
+    }
+});

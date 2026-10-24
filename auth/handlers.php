@@ -41,7 +41,8 @@ function np_h_auth_exchange(array $req): array {
     if ($t === null) { return $fail(400, 'invalid_login', 'token_' . ($GLOBALS['np_token_error'] ?? 'failed')); }
     if (empty($t['refresh_token'])) { return $fail(400, 'invalid_login', 'no_refresh_token'); }
     $u = np_userinfo($t['access_token']);
-    if ($u === null) { return $fail(400, 'invalid_login', 'userinfo_failed'); }
+    if ($u === null && isset($t['id_token'])) { $u = np_idtoken_profile((string) $t['id_token']); }
+    if ($u === null) { return $fail(400, 'invalid_login', 'userinfo_' . ($GLOBALS['np_userinfo_error'] ?? 'failed')); }
 
     $session = [
         'sub' => (string) $u['sub'],

@@ -45,7 +45,22 @@ function np_refresh(string $refreshToken): ?array {
 function np_userinfo(string $accessToken): ?array {
     $r = np_http('GET', 'https://openid-connect.googleapis.com/v1/userinfo', ['Authorization: Bearer ' . $accessToken]);
     $d = json_decode($r['body'], true);
+    $GLOBALS['np_userinfo_error'] = 'http_' . $r['status'];
     return ($r['status'] === 200 && is_array($d) && isset($d['sub'])) ? $d : null;
+}
+
+/**
+ * Perfil a partir do id_token recebido direto do endpoint de token (TLS), sem verificar a assinatura
+ * (permitido pelo OIDC Core 3.1.3.7). Só confere emissor e audiência.
+ */
+function np_idtoken_profile(string $idToken): ?array {
+    $parts = explode('.', $idToken);
+    if (count($parts) !== 3) { return null; }
+    $p = json_decode((string) base64_decode(strtr($parts[1], '-_', '+/'), false), true);
+    if (!is_array($p) || !isset($p['sub'])) { return null; }
+    if (!in_array($p['iss'] ?? '', ['https://accounts.google.com', 'accounts.google.com'], true)) { return null; }
+    if (($p['aud'] ?? '') !== (np_config()['client_id'] ?? null)) { return null; }
+    return $p;
 }
 
 function np_revoke(string $token): void {
