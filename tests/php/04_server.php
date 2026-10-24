@@ -30,7 +30,7 @@ test('server: arquivos internos não vazam (lib, auth, api, config, tests)', fun
     foreach (['/app/config.local.php', '/app/lib/util.php', '/app/lib/crypto.php', '/app/auth/handlers.php', '/app/api/drive.php', '/tests/run.php', '/lib/util.php', '/../lib/util.php', '/%2e%2e/lib/util.php'] as $p) {
         $r = http($port, 'GET', $p);
         // php -S devolve index.html para caminhos inexistentes; o que não pode é vazar código/segredo.
-        ok($r['status'] === 404 || $r['status'] === 403 || $r['body'] === '' || str_contains($r['body'], '<title>Notepad</title>'), "$p → {$r['status']}");
+        ok($r['status'] === 404 || $r['status'] === 403 || $r['body'] === '' || str_contains($r['body'], '<title>Notepad'), "$p → {$r['status']}");
         ok(!str_contains($r['body'], 'sec-test') && !str_contains($r['body'], '<?php'), "$p vazou conteúdo");
     }
 });
