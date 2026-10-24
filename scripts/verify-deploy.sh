@@ -11,7 +11,12 @@ for i in $(seq 1 18); do
   body="$(curl -fsS --max-time 15 "${BASE}api.php?r=health" 2>/dev/null)" && break
   sleep 5
 done
-if ! grep -q '"ok":true' <<<"$body"; then bad "health check inválido: ${body:-sem resposta}"; fi
+if ! grep -q '"ok":true' <<<"$body"; then
+  bad "health check inválido: ${body:-sem resposta}"
+  echo "--- diagnóstico (resposta recebida pelo runner) ---" >&2
+  curl -sS -i --max-time 20 "${BASE}api.php?r=health" 2>&1 | head -c 600 | sed 's/^/  /' >&2 || true
+  echo >&2
+fi
 if grep -q '"php":"outdated"' <<<"$body"; then bad "PHP do servidor está abaixo das versões corrigidas do PHP2Shell (8.2.35/8.3.36/8.4.27/8.5.12)"; fi
 
 code() { curl -s -o /dev/null --max-time 15 -w '%{http_code}' "$@"; }
