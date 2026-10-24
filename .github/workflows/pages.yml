@@ -1,0 +1,38 @@
+name: Relé OAuth (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths: ['relay/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gerar destino do relé
+        run: |
+          [ -n "$GOOGLE_REDIRECT_URI" ] || { echo "::error::GOOGLE_REDIRECT_URI ausente"; exit 1; }
+          case "$GOOGLE_REDIRECT_URI" in https://*) ;; *) echo "::error::deve ser https"; exit 1;; esac
+          printf 'window.NOTEPAD_CALLBACK = %s;\n' "$(php -r 'echo json_encode(getenv("GOOGLE_REDIRECT_URI"), JSON_UNESCAPED_SLASHES);')" > relay/target.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: relay
+      - id: deployment
+        uses: actions/deploy-pages@v4

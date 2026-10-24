@@ -36,11 +36,16 @@ test('auth/start: sem configuração → 500', function () {
 function exchange_req(string $oauthCookie, array $body): array {
     return post('auth/exchange', $body, ['cookies' => ['__Host-notepad-oauth' => $oauthCookie]]);
 }
-test('auth/start: pede response_mode=fragment (evita iss=https:// na query)', function () {
-    reset_env();
-    $r = np_dispatch(req(['query' => ['r' => 'auth/start']]));
-    parse_str((string) parse_url(hdr($r, 'Location')[0], PHP_URL_QUERY), $q);
-    eq($q['response_mode'], 'fragment');
+test('auth/start: usa o relé como redirect_uri quando configurado; o exchange envia o mesmo', function () {
+    reset_env(); $log = []; fake_google($log);
+    $GLOBALS['np_config_override'] = NP_TEST_CFG + ['oauth_redirect' => 'https://relay.test/notepad/callback.html'];
+    $start = np_dispatch(req(['query' => ['r' => 'auth/start']]));
+    parse_str((string) parse_url(hdr($start, 'Location')[0], PHP_URL_QUERY), $q);
+    eq($q['redirect_uri'], 'https://relay.test/notepad/callback.html');
+    ok(!isset($q['response_mode']));
+    $oauth = cookie_value($start, '__Host-notepad-oauth');
+    np_dispatch(exchange_req($oauth, ['code' => 'abc', 'state' => np_open($oauth, 'oauth')['state']]));
+    ok(str_contains($log[0][2], rawurlencode('https://relay.test/notepad/callback.html')), 'redirect_uri do relé no exchange');
 });
 test('auth/exchange: sucesso cria sessão cifrada sem expor tokens', function () {
     reset_env(); $log = []; fake_google($log);

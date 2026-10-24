@@ -41,6 +41,8 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
+      # Relé estático no GitHub Pages: o Google devolve o login para lá (fora do ModSecurity do host)
+      NP_OAUTH_REDIRECT: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/callback.html
     steps:
       - uses: actions/checkout@v4
       - name: Conferir secrets

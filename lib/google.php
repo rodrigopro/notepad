@@ -8,11 +8,8 @@ function np_auth_url(string $state, string $challenge): string {
     $c = np_config();
     return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
         'client_id' => $c['client_id'],
-        'redirect_uri' => $c['redirect_uri'],
+        'redirect_uri' => np_oauth_redirect(),
         'response_type' => 'code',
-        // O callback volta no #fragmento (não vai ao servidor): a query do Google traz `iss=https://…`,
-        // que o ModSecurity da hospedagem bloqueia com HTTP 406.
-        'response_mode' => 'fragment',
         'scope' => NP_SCOPES,
         'state' => $state,
         'code_challenge' => $challenge,
@@ -35,7 +32,7 @@ function np_exchange_code(string $code, string $verifier): ?array {
     return np_token_request([
         'grant_type' => 'authorization_code',
         'code' => $code,
-        'redirect_uri' => np_config()['redirect_uri'],
+        'redirect_uri' => np_oauth_redirect(),
         'code_verifier' => $verifier,
     ]);
 }

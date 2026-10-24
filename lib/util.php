@@ -15,10 +15,16 @@ function np_config(): array {
     if ($cfg !== null) { return $cfg; }
     $file = NP_APP_DIR . '/config.local.php';
     $cfg = is_file($file) ? (array) require $file : [];
-    foreach (['client_id' => 'GOOGLE_CLIENT_ID', 'client_secret' => 'GOOGLE_CLIENT_SECRET', 'redirect_uri' => 'GOOGLE_REDIRECT_URI'] as $k => $env) {
+    foreach (['client_id' => 'GOOGLE_CLIENT_ID', 'client_secret' => 'GOOGLE_CLIENT_SECRET', 'redirect_uri' => 'GOOGLE_REDIRECT_URI', 'oauth_redirect' => 'NP_OAUTH_REDIRECT'] as $k => $env) {
         if (empty($cfg[$k]) && (string) getenv($env) !== '') { $cfg[$k] = (string) getenv($env); }
     }
     return $cfg;
+}
+
+/** redirect_uri enviado ao Google: o relé (se configurado) ou a própria página de callback do app. */
+function np_oauth_redirect(): string {
+    $c = np_config();
+    return (string) ($c['oauth_redirect'] ?? '') !== '' ? (string) $c['oauth_redirect'] : (string) ($c['redirect_uri'] ?? '');
 }
 
 function np_origin_of(string $url): string {

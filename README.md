@@ -57,9 +57,11 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style
 add_header X-Content-Type-Options nosniff always;
 ```
 
-### Por que o callback é `callback.html` (e usa o `#fragmento`)
+### Por que existe o relé (`relay/`, GitHub Pages)
 
-O Google devolve `iss=https://accounts.google.com` na query do redirecionamento. Muitos ModSecurity de hospedagem compartilhada bloqueiam (HTTP 406) qualquer parâmetro cujo valor comece com `http(s)://`. O app pede `response_mode=fragment`: o retorno vem após o `#`, que o navegador não envia ao servidor. A página `callback.html` lê o código, apaga-o da URL e o troca via `POST api.php?r=auth/exchange`.
+O Google devolve `iss=https://accounts.google.com` na query do redirecionamento (e ignora `response_mode=fragment` no fluxo com `code`). Muitos ModSecurity de hospedagem compartilhada bloqueiam (HTTP 406) qualquer parâmetro cujo valor comece com `http(s)://`, até para arquivos estáticos. Por isso o Google redireciona para um relé estático em `https://<dono>.github.io/<repo>/callback.html` (publicado por `.github/workflows/pages.yml`), que repassa só `code`, `state` e `error` para `GOOGLE_REDIRECT_URI` no `#fragmento`, que o navegador não envia ao servidor. A página `callback.html` do app lê o código, apaga-o da URL e o troca via `POST api.php?r=auth/exchange`.
+
+Passos: em *Settings → Pages* use *Source: GitHub Actions*; no console do Google cadastre as duas URIs (relé e `GOOGLE_REDIRECT_URI`). O deploy define `NP_OAUTH_REDIRECT` com a URL do relé. Sem ele, o app usa `GOOGLE_REDIRECT_URI` direto.
 
 ## Desenvolvimento
 

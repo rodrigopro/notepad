@@ -14,6 +14,7 @@ if [[ -n "${GOOGLE_CLIENT_ID:-}" ]]; then
   umask 077
   php -r '
     $c = ["client_id" => getenv("GOOGLE_CLIENT_ID"), "client_secret" => getenv("GOOGLE_CLIENT_SECRET"), "redirect_uri" => getenv("GOOGLE_REDIRECT_URI")];
+    if ((string) getenv("NP_OAUTH_REDIRECT") !== "") { $c["oauth_redirect"] = getenv("NP_OAUTH_REDIRECT"); }
     file_put_contents($argv[1], "<?php\ndeclare(strict_types=1);\nif (!defined(\"NP_APP\")) { http_response_code(404); exit; }\nreturn " . var_export($c, true) . ";\n");
   ' "$OUT/app/config.local.php"
 fi
