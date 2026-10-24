@@ -7,7 +7,7 @@ fail=0
 bad() { echo "FALHA: $*" >&2; fail=1; }
 
 body=""
-for i in 1 2 3 4 5 6; do
+for i in $(seq 1 18); do
   body="$(curl -fsS --max-time 15 "${BASE}api.php?r=health" 2>/dev/null)" && break
   sleep 5
 done
@@ -21,7 +21,7 @@ for p in app/config.local.php app/lib/util.php app/lib/crypto.php app/auth/handl
 done
 if curl -s --max-time 15 "${BASE}app/config.local.php" | grep -qiE 'client_secret|<\?php'; then bad "config.local.php expõe conteúdo"; fi
 
-c="$(code -X POST -H 'Content-Type: multipart/form-data; boundary=x' --data-binary '--x--' "${BASE}api.php?r=auth/logout")"
+c="$(code -X POST -H 'Content-Type: multipart/form-data; boundary=x' --data-binary $'--x\r\nContent-Disposition: form-data; name="a"\r\n\r\nb\r\n--x--\r\n' "${BASE}api.php?r=auth/logout")"
 [[ "$c" == "415" ]] || bad "multipart deveria retornar 415 (HTTP $c)"
 c="$(code -X POST -H 'Content-Type: application/json' -d '{}' "${BASE}api.php?r=auth/logout")"
 [[ "$c" == "403" ]] || bad "POST sem CSRF deveria retornar 403 (HTTP $c)"
