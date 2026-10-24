@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'">
+  <meta name="color-scheme" content="light dark">
+  <title>Notepad</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/app.css">
+  <link rel="stylesheet" href="assets/print.css" media="print">
+</head>
+<body>
+  <header id="toolbar" role="toolbar" aria-label="Ações">
+    <button type="button" data-action="new" title="Nova aba (Ctrl+Alt+N)">Novo</button>
+    <button type="button" data-action="open-drive" title="Abrir do Drive">Abrir</button>
+    <button type="button" data-action="save-drive" title="Salvar no Drive (Ctrl+S)">Salvar</button>
+    <span class="sep"></span>
+    <button type="button" data-action="find" title="Localizar / substituir (Ctrl+F)">Localizar</button>
+    <button type="button" data-action="goto" title="Ir para linha (Ctrl+G)">Ir p/ linha</button>
+    <span class="sep"></span>
+    <button type="button" data-action="preview" aria-pressed="false" title="Preview de Markdown (Ctrl+Alt+M)">Preview</button>
+    <button type="button" data-action="print" title="Imprimir / salvar PDF (Ctrl+P)">Imprimir / PDF</button>
+    <span class="grow"></span>
+    <span id="sync-state" role="status" aria-live="polite">Local</span>
+    <span id="account"></span>
+  </header>
+
+  <nav id="tabs" role="tablist" aria-label="Abas"></nav>
+
+  <form id="findbar" hidden>
+    <input id="find-term" type="search" placeholder="Localizar" aria-label="Localizar" autocomplete="off">
+    <input id="find-repl" type="text" placeholder="Substituir por" aria-label="Substituir por" autocomplete="off">
+    <label><input id="find-case" type="checkbox"> Aa</label>
+    <button type="button" data-find="prev">&lt;</button>
+    <button type="button" data-find="next">&gt;</button>
+    <button type="button" data-find="replace-all">Substituir tudo</button>
+    <span id="find-count" role="status"></span>
+    <button type="button" data-find="close" aria-label="Fechar">×</button>
+  </form>
+
+  <main id="work">
+    <div id="editor">
+      <div id="gutter" aria-hidden="true"></div>
+      <textarea id="text" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editor de texto"></textarea>
+    </div>
+    <article id="preview" hidden aria-label="Preview de Markdown"></article>
+  </main>
+
+  <footer id="status">
+    <span id="st-pos">Ln 1, Col 1</span>
+    <span id="st-size"></span>
+    <span>UTF-8</span>
+    <span id="st-warn"></span>
+  </footer>
+
+  <div id="toast" role="status" hidden></div>
+
+  <dialog id="dlg-files">
+    <form method="dialog">
+      <h2>Abrir do Drive</h2>
+      <ul id="file-list"></ul>
+      <p id="file-empty" hidden>Nenhum arquivo na pasta "Notepad".</p>
+      <menu><button value="cancel">Fechar</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-conflict">
+    <form method="dialog">
+      <h2>Conflito de sincronização</h2>
+      <p>O workspace no Drive é diferente do que está neste navegador. O que deseja manter?</p>
+      <menu>
+        <button value="local">Manter local</button>
+        <button value="remote">Manter do Drive</button>
+        <button value="copy">Manter os dois</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

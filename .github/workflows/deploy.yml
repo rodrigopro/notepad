@@ -1,0 +1,61 @@
+name: Testes e deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint PHP
+        run: find public lib auth api tests -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+      - name: Testes PHP
+        run: php tests/run.php
+      - name: Lint e testes JS
+        run: |
+          for f in public/assets/js/*.js; do node --check "$f"; done
+          node --test tests/js/*.test.js
+      - name: Varredura de segredos
+        run: bash scripts/scan-secrets.sh
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_DESTINATION: ${{ secrets.FTP_DESTINATION }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conferir secrets
+        run: |
+          for v in FTP_SERVER FTP_USERNAME FTP_PASSWORD FTP_DESTINATION GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REDIRECT_URI; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v ausente"; exit 1; }
+          done
+          case "$GOOGLE_REDIRECT_URI" in https://*) ;; *) echo "::error::GOOGLE_REDIRECT_URI deve ser https"; exit 1;; esac
+      - name: Montar pacote
+        run: bash scripts/build.sh dist
+      - name: Instalar lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Publicar por FTPS
+        run: bash scripts/deploy.sh dist
+      - name: Verificação pós-deploy
+        run: |
+          uri="${GOOGLE_REDIRECT_URI%%\?*}"
+          bash scripts/verify-deploy.sh "${uri%/*}/"

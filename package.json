@@ -1,0 +1,8 @@
+{
+  "name": "notepad",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "php tests/run.php && node --test tests/js/*.test.js"
+  }
+}

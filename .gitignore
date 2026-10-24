@@ -1,0 +1,5 @@
+node_modules/
+vendor/
+dist/
+config.local.php
+.DS_Store
