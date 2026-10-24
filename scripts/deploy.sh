@@ -10,7 +10,9 @@ DEST="${FTP_DESTINATION%/}"
 if [[ -z "$DEST" || "$DEST" == "." ]]; then DEST="/"; fi
 HOST="${FTP_SERVER#ftp://}"; HOST="${HOST#ftps://}"; HOST="${HOST%%/*}"
 
-LFTP_SET='set cmd:fail-exit yes; set net:max-retries 2; set net:timeout 20; set ftp:ssl-allow yes; set ftp:ssl-force yes; set ftp:ssl-protect-data yes; set ssl:verify-certificate yes; set ftp:passive-mode yes'
+# A cadeia do certificado é sempre verificada; só o nome do host é dispensado por padrão (hospedagens
+# compartilhadas costumam usar certificado do nome do servidor). Defina FTP_TLS_CHECK_HOSTNAME=yes para exigir.
+LFTP_SET='set cmd:fail-exit yes; set net:max-retries 2; set net:timeout 20; set ftp:ssl-allow yes; set ftp:ssl-force yes; set ftp:ssl-protect-data yes; set ssl:verify-certificate yes; set ssl:check-hostname ${FTP_TLS_CHECK_HOSTNAME:-no}; set ftp:passive-mode yes'
 run() { lftp -e "$LFTP_SET; $1; bye" -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$HOST"; }
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
