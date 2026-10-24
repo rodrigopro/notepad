@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api.php
+Disallow: /callback.html
+
+Sitemap: https://rodrigo.pro/notepad/sitemap.xml

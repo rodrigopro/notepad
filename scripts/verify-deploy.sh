@@ -26,6 +26,12 @@ for p in app/config.local.php app/lib/util.php app/lib/crypto.php app/auth/handl
 done
 if curl -s --max-time 15 "${BASE}app/config.local.php" | grep -qiE 'client_secret|<\?php'; then bad "config.local.php expõe conteúdo"; fi
 
+for p in sobre.html privacidade.html robots.txt sitemap.xml manifest.webmanifest assets/og.png; do
+  c="$(code "${BASE}${p}")"
+  [[ "$c" == "200" ]] || bad "${p} deveria retornar 200 (HTTP $c)"
+done
+curl -s --max-time 15 "$BASE" | grep -q '<link rel="canonical"' || bad "index.html sem canonical"
+
 c="$(code -X POST -H 'Content-Type: multipart/form-data; boundary=x' --data-binary $'--x\r\nContent-Disposition: form-data; name="a"\r\n\r\nb\r\n--x--\r\n' "${BASE}api.php?r=auth/logout")"
 [[ "$c" == "415" ]] || bad "multipart deveria retornar 415 (HTTP $c)"
 c="$(code -X POST -H 'Content-Type: application/json' -d '{}' "${BASE}api.php?r=auth/logout")"

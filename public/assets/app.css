@@ -20,6 +20,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 input[type="search"], input[type="text"] { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; min-width: 0; }
 
 #toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#toolbar .brand { font-size: 15px; font-weight: 700; margin: 0 8px 0 0; }
+#status .grow { flex: 1; }
+#status a { color: var(--muted); }
 #toolbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
 #toolbar .grow { flex: 1; }
 #sync-state { color: var(--muted); font-size: 12px; }
