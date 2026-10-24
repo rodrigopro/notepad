@@ -81,7 +81,7 @@ function np_route(array $req): array {
         $table = [
             'health' => ['GET', 'np_h_health'],
             'auth/start' => ['GET', 'np_h_auth_start'],
-            'auth/callback' => ['GET', 'np_h_auth_callback'],
+            'auth/exchange' => ['POST', 'np_h_auth_exchange'],
             'auth/me' => ['GET', 'np_h_auth_me'],
             'auth/logout' => ['POST', 'np_h_auth_logout'],
             'drive/workspace' => ['GET', 'np_h_ws_get'],

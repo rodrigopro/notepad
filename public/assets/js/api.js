@@ -24,6 +24,7 @@ export function createApi(fetchFn = globalThis.fetch.bind(globalThis), base = 'a
   }
   return {
     me: () => call('auth/me'),
+    exchange: (code, state) => call('auth/exchange', { method: 'POST', body: { code, state } }),
     logout: () => call('auth/logout', { method: 'POST' }),
     getWorkspace: () => call('drive/workspace'),
     saveWorkspace: (data, baseVersion, force = false) => call('drive/workspace/save', { method: 'POST', body: { data, baseVersion, force } }),

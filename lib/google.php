@@ -10,6 +10,9 @@ function np_auth_url(string $state, string $challenge): string {
         'client_id' => $c['client_id'],
         'redirect_uri' => $c['redirect_uri'],
         'response_type' => 'code',
+        // O callback volta no #fragmento (não vai ao servidor): a query do Google traz `iss=https://…`,
+        // que o ModSecurity da hospedagem bloqueia com HTTP 406.
+        'response_mode' => 'fragment',
         'scope' => NP_SCOPES,
         'state' => $state,
         'code_challenge' => $challenge,

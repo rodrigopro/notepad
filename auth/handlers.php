@@ -24,21 +24,22 @@ function np_h_auth_start(array $req): array {
     return np_redirect(np_auth_url($state, $challenge), [$cookie]);
 }
 
-function np_h_auth_callback(array $req): array {
-    $base = np_app_base();
+/** Troca o código recebido pela página callback.html (via fragmento) por uma sessão. */
+function np_h_auth_exchange(array $req): array {
     $clear = np_clear_cookie($req, 'notepad-oauth');
-    $fail = static fn(string $why): array => np_redirect($base . '?login=' . $why, [$clear]);
+    $fail = static fn(int $status, string $code): array => np_error($status, $code, [$clear]);
 
-    $q = $req['query'];
-    if (($q['error'] ?? '') === 'access_denied') { return $fail('denied'); }
+    $in = json_decode($req['body'], true);
+    $code = is_array($in) ? ($in['code'] ?? null) : null;
+    $state = is_array($in) ? ($in['state'] ?? null) : null;
     $flow = np_open((string) ($req['cookies'][np_cookie_name($req, 'notepad-oauth')] ?? ''), 'oauth');
-    if ($flow === null || !is_string($q['state'] ?? null) || !hash_equals($flow['state'], $q['state']) || !is_string($q['code'] ?? null)) {
-        return $fail('error');
+    if ($flow === null || !is_string($state) || !hash_equals($flow['state'], $state) || !is_string($code) || $code === '' || strlen($code) > 2048) {
+        return $fail(400, 'invalid_login');
     }
-    $t = np_exchange_code($q['code'], $flow['v']);
-    if ($t === null || empty($t['refresh_token'])) { return $fail('error'); }
+    $t = np_exchange_code($code, $flow['v']);
+    if ($t === null || empty($t['refresh_token'])) { return $fail(400, 'invalid_login'); }
     $u = np_userinfo($t['access_token']);
-    if ($u === null) { return $fail('error'); }
+    if ($u === null) { return $fail(400, 'invalid_login'); }
 
     $session = [
         'sub' => (string) $u['sub'],
@@ -48,7 +49,7 @@ function np_h_auth_callback(array $req): array {
         'at' => $t['access_token'],
         'atx' => time() + (int) ($t['expires_in'] ?? 3000),
     ];
-    return np_redirect($base, [$clear, np_seal_session($req, $session)]);
+    return np_json(200, ['ok' => true], [$clear, np_seal_session($req, $session)]);
 }
 
 function np_h_auth_me(array $req): array {

@@ -27,7 +27,7 @@ Atalhos: `Ctrl+S` salvar no Drive · `Ctrl+F`/`Ctrl+H` localizar/substituir · `
 1. **Google Cloud Console** → APIs e serviços:
    - ative a *Google Drive API*;
    - configure a tela de consentimento (escopos `drive.file` e `drive.appdata` não são sensíveis);
-   - crie um *ID do cliente OAuth* do tipo **Aplicativo da Web** e cadastre como **URI de redirecionamento autorizado** exatamente o valor de `GOOGLE_REDIRECT_URI`, por exemplo `https://seu-dominio.com/notepad/api.php?r=auth/callback`.
+   - crie um *ID do cliente OAuth* do tipo **Aplicativo da Web** e cadastre como **URI de redirecionamento autorizado** exatamente o valor de `GOOGLE_REDIRECT_URI`, por exemplo `https://seu-dominio.com/notepad/callback.html`.
 2. **Repository secrets** no GitHub (Settings → Secrets and variables → Actions):
 
    | Secret | Conteúdo |
@@ -36,7 +36,7 @@ Atalhos: `Ctrl+S` salvar no Drive · `Ctrl+F`/`Ctrl+H` localizar/substituir · `
    | `FTP_USERNAME` / `FTP_PASSWORD` | credenciais FTP |
    | `FTP_DESTINATION` | pasta remota que serve o site (ex.: `/public_html/notepad`) |
    | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | credenciais OAuth |
-   | `GOOGLE_REDIRECT_URI` | `https://…/api.php?r=auth/callback` (HTTPS obrigatório) |
+   | `GOOGLE_REDIRECT_URI` | `https://…/callback.html` (HTTPS obrigatório; página estática do app) |
 
 3. Faça push em `main`. O workflow roda testes, monta `dist/`, publica por FTPS e verifica o resultado.
 
@@ -57,6 +57,10 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style
 add_header X-Content-Type-Options nosniff always;
 ```
 
+### Por que o callback é `callback.html` (e usa o `#fragmento`)
+
+O Google devolve `iss=https://accounts.google.com` na query do redirecionamento. Muitos ModSecurity de hospedagem compartilhada bloqueiam (HTTP 406) qualquer parâmetro cujo valor comece com `http(s)://`. O app pede `response_mode=fragment`: o retorno vem após o `#`, que o navegador não envia ao servidor. A página `callback.html` lê o código, apaga-o da URL e o troca via `POST api.php?r=auth/exchange`.
+
 ## Desenvolvimento
 
 ```bash
@@ -64,7 +68,7 @@ add_header X-Content-Type-Options nosniff always;
 npm test            # ou: php tests/run.php && node --test tests/js/*.test.js
 
 # rodar localmente
-GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… GOOGLE_REDIRECT_URI='http://localhost:8080/api.php?r=auth/callback' \
+GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… GOOGLE_REDIRECT_URI='http://localhost:8080/callback.html' \
   php -S localhost:8080 -t public
 ```
 

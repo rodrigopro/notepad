@@ -33,44 +33,62 @@ test('auth/start: sem configuração → 500', function () {
     $GLOBALS['np_config_override'] = [];
     eq(np_dispatch(req(['query' => ['r' => 'auth/start']]))['status'], 500);
 });
-test('auth/callback: sucesso cria sessão cifrada sem expor tokens', function () {
+function exchange_req(string $oauthCookie, array $body): array {
+    return post('auth/exchange', $body, ['cookies' => ['__Host-notepad-oauth' => $oauthCookie]]);
+}
+test('auth/start: pede response_mode=fragment (evita iss=https:// na query)', function () {
+    reset_env();
+    $r = np_dispatch(req(['query' => ['r' => 'auth/start']]));
+    parse_str((string) parse_url(hdr($r, 'Location')[0], PHP_URL_QUERY), $q);
+    eq($q['response_mode'], 'fragment');
+});
+test('auth/exchange: sucesso cria sessão cifrada sem expor tokens', function () {
     reset_env(); $log = []; fake_google($log);
     $start = np_dispatch(req(['query' => ['r' => 'auth/start']]));
     $oauth = cookie_value($start, '__Host-notepad-oauth');
     $state = np_open($oauth, 'oauth')['state'];
-    $r = np_dispatch(req(['query' => ['r' => 'auth/callback', 'state' => $state, 'code' => 'abc'], 'cookies' => ['__Host-notepad-oauth' => $oauth]]));
-    eq($r['status'], 302);
-    eq(hdr($r, 'Location')[0], 'https://example.test/notepad/');
+    $r = np_dispatch(exchange_req($oauth, ['code' => 'abc', 'state' => $state]));
+    eq($r['status'], 200);
     $sess = cookie_value($r, '__Host-notepad');
     ok($sess !== null && !str_contains($sess, 'RTOKEN'), 'cookie');
     $c = array_values(array_filter(hdr($r, 'Set-Cookie'), fn($x) => str_starts_with($x, '__Host-notepad=')))[0];
     ok(str_contains($c, 'HttpOnly') && str_contains($c, 'SameSite=Strict') && str_contains($c, 'Secure'));
+    ok(str_contains(implode(' ', hdr($r, 'Set-Cookie')), '__Host-notepad-oauth=; '), 'cookie oauth limpo');
     eq(np_open($sess, 'session')['rt'], 'RTOKEN-SECRET-VALUE');
     ok(str_contains($log[0][2], 'code_verifier='), 'verifier enviado');
+    ok(!str_contains($r['body'], 'RTOKEN') && !str_contains($r['body'], '"AT"'));
     $me = np_dispatch(req(['query' => ['r' => 'auth/me'], 'cookies' => ['__Host-notepad' => $sess]]));
     $md = json_decode($me['body'], true);
     eq([$md['authenticated'], $md['name'], $md['picture']], [true, 'Ana', 'https://lh3/p.png']);
     eq($md['uid'], substr(hash('sha256', '42'), 0, 16));
     ok(!str_contains($me['body'], '"42"'), 'sub cru exposto');
-    ok(!str_contains($me['body'], 'RTOKEN') && !str_contains($me['body'], '"AT"'));
 });
-test('auth/callback: state inválido não cria sessão', function () {
+test('auth/exchange: state inválido, ausente ou sem cookie não cria sessão', function () {
     reset_env(); $log = []; fake_google($log);
-    $start = np_dispatch(req(['query' => ['r' => 'auth/start']]));
-    $oauth = cookie_value($start, '__Host-notepad-oauth');
-    foreach ([['state' => 'errado', 'code' => 'abc'], ['code' => 'abc']] as $q) {
-        $r = np_dispatch(req(['query' => ['r' => 'auth/callback'] + $q, 'cookies' => ['__Host-notepad-oauth' => $oauth]]));
-        ok(str_contains(hdr($r, 'Location')[0], 'login=error'));
+    $oauth = cookie_value(np_dispatch(req(['query' => ['r' => 'auth/start']])), '__Host-notepad-oauth');
+    foreach ([['code' => 'abc', 'state' => 'errado'], ['code' => 'abc'], ['state' => 'x'], ['code' => ['a'], 'state' => 'x'], []] as $b) {
+        $r = np_dispatch(exchange_req($oauth, $b));
+        eq($r['status'], 400);
         eq(cookie_value($r, '__Host-notepad'), null);
     }
-    $r = np_dispatch(req(['query' => ['r' => 'auth/callback', 'state' => 'x', 'code' => 'abc']]));
-    ok(str_contains(hdr($r, 'Location')[0], 'login=error'), 'sem cookie');
+    $r = np_dispatch(post('auth/exchange', ['code' => 'abc', 'state' => 'x']));
+    eq($r['status'], 400, 'sem cookie');
     eq(count($log), 0, 'sem chamadas ao Google');
 });
-test('auth/callback: consentimento negado', function () {
+test('auth/exchange: exige CSRF e rejeita GET', function () {
     reset_env();
-    $r = np_dispatch(req(['query' => ['r' => 'auth/callback', 'error' => 'access_denied']]));
-    ok(str_contains(hdr($r, 'Location')[0], 'login=denied'));
+    $h = ['content-type' => 'application/json', 'origin' => 'https://evil.test', 'x-notepad' => '1'];
+    eq(np_dispatch(post('auth/exchange', ['code' => 'a', 'state' => 'b'], ['headers' => $h]))['status'], 403);
+    eq(np_dispatch(req(['query' => ['r' => 'auth/exchange']]))['status'], 405);
+    eq(np_dispatch(req(['query' => ['r' => 'auth/callback']]))['status'], 404, 'rota antiga removida');
+});
+test('auth/exchange: falha na troca de código', function () {
+    reset_env(); $log = [];
+    $oauth = cookie_value(np_dispatch(req(['query' => ['r' => 'auth/start']])), '__Host-notepad-oauth');
+    $GLOBALS['np_http_fake'] = fn() => ['status' => 400, 'body' => '{"error":"invalid_grant"}'];
+    $r = np_dispatch(exchange_req($oauth, ['code' => 'abc', 'state' => np_open($oauth, 'oauth')['state']]));
+    eq($r['status'], 400);
+    eq(cookie_value($r, '__Host-notepad'), null);
 });
 test('auth/me: sem sessão e com cookie adulterado', function () {
     reset_env();
