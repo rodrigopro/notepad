@@ -174,3 +174,37 @@ test('429 é tratado como temporário e reagenda', async () => {
   assert.equal(h.statuses.at(-1), 'offline');
   assert.ok(h.timers.length > t, 'nova tentativa agendada');
 });
+
+test('start: conteúdo igual ao remoto não gera conflito, mesmo com versão diferente', async () => {
+  let asked = 0;
+  const h = harness({ getWorkspace: async () => ({ exists: true, version: '9', data: { tabs: [{ id: 'a' }] } }) }, { onConflict: async () => { asked++; return 'local'; } });
+  await h.sync.start(true, '5');
+  assert.equal(asked, 0);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.statuses.at(-1), 'synced');
+});
+
+test('start: local intacto desde o último sync e remoto mudou → aplica remoto sem perguntar', async () => {
+  let asked = 0;
+  const fp = (d) => JSON.stringify(d);
+  const h = harness({ getWorkspace: async () => ({ exists: true, version: '9', data: { tabs: [{ id: 'novo' }] } }) }, { onConflict: async () => { asked++; return 'local'; } });
+  await h.sync.start(true, '5', fp({ tabs: [{ id: 'a' }] }));
+  assert.equal(asked, 0);
+  assert.deepEqual(h.applied, [[{ tabs: [{ id: 'novo' }] }, 'replace']]);
+});
+
+test('start: só o local mudou desde o último sync → envia sem perguntar', async () => {
+  let asked = 0;
+  const fp = (d) => JSON.stringify(d);
+  const h = harness({ getWorkspace: async () => ({ exists: true, version: '9', data: { tabs: [{ id: 'velho' }] } }) }, { onConflict: async () => { asked++; return 'local'; } });
+  await h.sync.start(true, '5', fp({ tabs: [{ id: 'velho' }] }));
+  assert.equal(asked, 0);
+  assert.equal(h.calls.length, 1);
+});
+
+test('start: os dois mudaram desde o último sync → conflito', async () => {
+  let asked = 0;
+  const h = harness({ getWorkspace: async () => ({ exists: true, version: '9', data: { tabs: [{ id: 'r' }] } }) }, { onConflict: async () => { asked++; return 'local'; } });
+  await h.sync.start(true, '5', JSON.stringify({ tabs: [{ id: 'base' }] }));
+  assert.equal(asked, 1);
+});

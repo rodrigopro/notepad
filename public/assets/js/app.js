@@ -16,7 +16,7 @@ const el = {
 const storage = createStorage();
 const api = createApi();
 let user = null; // {name, picture} quando logado
-let meta = { syncVersion: null, syncUser: null };
+let meta = { syncVersion: null, syncFp: null, syncUser: null };
 
 const SYNC_LABEL = {
   local: 'Local', pending: 'Alterações pendentes…', syncing: 'Sincronizando…', synced: 'Sincronizado',
@@ -26,7 +26,7 @@ const SYNC_LABEL = {
 // ---------- Estado ----------
 const saved = storage.load();
 let state = S.deserialize(saved) || S.initialState();
-if (saved && saved.meta) meta = { syncVersion: String(saved.meta.syncVersion ?? ''), syncUser: String(saved.meta.syncUser ?? '') };
+if (saved && saved.meta) meta = { syncVersion: String(saved.meta.syncVersion ?? ''), syncFp: saved.meta.syncFp == null ? null : String(saved.meta.syncFp), syncUser: String(saved.meta.syncUser ?? '') };
 let renderedTab = null;
 
 function persist() {
@@ -69,7 +69,12 @@ const sync = createSync({
   },
   onConflict: askConflict,
   onReauth() { toast('Sessão do Google expirada. Entre novamente — seu conteúdo local está preservado.'); renderAccount(); },
-  onVersion(v) { meta = { syncVersion: v, syncUser: user ? user.id : null }; persistSoon(); },
+  // Só o que importa ao conflito: aba ativa e modo preview diferem entre navegadores sem serem divergência.
+  fingerprint(d) {
+    const tabs = d && Array.isArray(d.tabs) ? d.tabs : [];
+    return JSON.stringify(tabs.map((t) => [t.id, t.title, t.content, t.savedContent, t.driveId || null]));
+  },
+  onVersion(v, fp) { meta = { syncVersion: v, syncFp: fp, syncUser: user ? user.id : null }; persistSoon(); },
 });
 
 function askConflict() {
@@ -324,7 +329,7 @@ async function login() {
       renderAccount();
       const hasContent = state.tabs.some((t) => t.content !== '');
       const known = meta.syncUser === user.id ? meta.syncVersion || null : null;
-      await sync.start(hasContent, known);
+      await sync.start(hasContent, known, meta.syncUser === user.id ? meta.syncFp ?? null : null);
       return;
     }
   } catch { /* offline: segue em modo local */ }
@@ -333,7 +338,7 @@ async function login() {
 
 async function logout() {
   try { await api.logout(); } catch { /* cookie expira de qualquer forma */ }
-  user = null; meta = { syncVersion: null, syncUser: null };
+  user = null; meta = { syncVersion: null, syncFp: null, syncUser: null };
   sync.stop(); persist(); renderAccount(); renderTabs();
   toast('Você saiu. As abas continuam neste navegador.');
 }

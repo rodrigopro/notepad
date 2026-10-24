@@ -4,7 +4,7 @@ import { ApiError } from './api.js';
 
 export function createSync({
   api, getWorkspace, applyRemote, onStatus, onConflict, onReauth,
-  onVersion, delay = 2000, retryDelay = 15000, setTimer = setTimeout, clearTimer = clearTimeout, isOnline = () => true,
+  onVersion, fingerprint = (d) => JSON.stringify(d), delay = 2000, retryDelay = 15000, setTimer = setTimeout, clearTimer = clearTimeout, isOnline = () => true,
 }) {
   let enabled = false;
   let baseVersion = null;
@@ -15,9 +15,10 @@ export function createSync({
 
   const status = (s) => onStatus && onStatus(s);
 
-  function setBase(v) {
+  // `data` é o conteúdo que o Drive passou a ter nesta versão: sua impressão digital marca o "já sincronizado".
+  function setBase(v, data) {
     baseVersion = v;
-    if (onVersion) onVersion(v);
+    if (onVersion) onVersion(v, data === undefined ? null : fingerprint(data));
   }
 
   function arm(ms) {
@@ -37,14 +38,15 @@ export function createSync({
     const choice = await onConflict(remote);
     if (choice === 'remote') {
       applyRemote(remote.data, 'replace');
-      setBase(remote.version);
+      setBase(remote.version, remote.data);
       syncedGeneration = generation;
       return true;
     }
     if (choice === 'copy') applyRemote(remote.data, 'merge');
     if (choice !== 'local' && choice !== 'copy') return false;
-    const res = await api.saveWorkspace(getWorkspace(), remote.version, true);
-    setBase(res.version);
+    const sent = getWorkspace();
+    const res = await api.saveWorkspace(sent, remote.version, true);
+    setBase(res.version, sent);
     syncedGeneration = generation;
     return true;
   }
@@ -58,8 +60,9 @@ export function createSync({
         const target = generation;
         status('syncing');
         try {
-          const res = await api.saveWorkspace(getWorkspace(), baseVersion);
-          setBase(res.version);
+          const sent = getWorkspace();
+          const res = await api.saveWorkspace(sent, baseVersion);
+          setBase(res.version, sent);
           syncedGeneration = target;
         } catch (e) {
           if (e instanceof ApiError && e.status === 409) {
@@ -89,7 +92,7 @@ export function createSync({
     flush,
     get pending() { return syncedGeneration !== generation; },
     /** Chamado após login: compara local x remoto e decide o ponto de partida. */
-    async start(localHasContent, knownVersion = null) {
+    async start(localHasContent, knownVersion = null, knownFp = null) {
       enabled = true;
       status('syncing');
       try {
@@ -98,12 +101,27 @@ export function createSync({
           setBase(null);
           generation++;
         } else {
-          setBase(remote.version);
-          if (knownVersion !== null && knownVersion === remote.version) {
+          const remoteFp = fingerprint(remote.data);
+          const localFp = fingerprint(getWorkspace());
+          // A versão do Drive pode mudar sem o conteúdo mudar; por isso o conteúdo decide primeiro.
+          if (remoteFp === localFp) {
+            setBase(remote.version, remote.data); // já iguais: nada a enviar nem a perguntar
+            syncedGeneration = generation;
+          } else if (knownVersion !== null && knownVersion === remote.version) {
+            setBase(remote.version, remote.data);
             generation++; // local descende desta versão: o local vence, sem perguntar
+          } else if (knownFp !== null && localFp === knownFp) {
+            applyRemote(remote.data, 'replace'); // local intacto desde o último sync; só o remoto mudou
+            setBase(remote.version, remote.data);
+            syncedGeneration = generation;
+          } else if (knownFp !== null && remoteFp === knownFp) {
+            setBase(remote.version, remote.data);
+            generation++; // remoto intacto desde o último sync; só o local mudou
           } else if (localHasContent) {
+            setBase(remote.version, remote.data);
             if (!(await resolveConflict({ data: remote.data, version: remote.version }))) { status('conflict'); return; }
           } else {
+            setBase(remote.version, remote.data);
             applyRemote(remote.data, 'replace');
             syncedGeneration = generation;
           }
