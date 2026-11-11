@@ -38,6 +38,7 @@
     <button type="button" data-action="new" title="Nova aba (Ctrl+Alt+N)">Novo</button>
     <button type="button" data-action="open-drive" title="Abrir do Drive">Abrir</button>
     <button type="button" data-action="save-drive" title="Salvar no Drive (Ctrl+S)">Salvar</button>
+    <button type="button" data-action="rename" title="Renomear aba (F2 ou duplo clique na aba)">Renomear</button>
     <span class="sep"></span>
     <button type="button" data-action="find" title="Localizar / substituir (Ctrl+F)">Localizar</button>
     <button type="button" data-action="goto" title="Ir para linha (Ctrl+G)">Ir p/ linha</button>
@@ -92,17 +93,6 @@
     </form>
   </dialog>
 
-  <dialog id="dlg-conflict">
-    <form method="dialog">
-      <h2>Conflito de sincronização</h2>
-      <p>O workspace no Drive é diferente do que está neste navegador. O que deseja manter?</p>
-      <menu>
-        <button value="local">Manter local</button>
-        <button value="remote">Manter do Drive</button>
-        <button value="copy">Manter os dois</button>
-      </menu>
-    </form>
-  </dialog>
 
   <script type="module" src="assets/js/app.js"></script>
 </body>

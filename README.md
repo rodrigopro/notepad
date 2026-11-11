@@ -5,13 +5,13 @@ PHP, HTML e JavaScript puros: **nenhuma biblioteca de terceiros em runtime** (`v
 
 ## Recursos
 
-- Abas (novo, renomear com duplo clique, arrastar para reordenar, fechar), numeração de linhas, localizar/substituir, ir para linha, barra de status.
+- Abas (novo, renomear com o botão Renomear, `F2` ou duplo clique, arrastar para reordenar, fechar), numeração de linhas, localizar/substituir, ir para linha, barra de status.
 - Autosave local (`localStorage`) — funciona sem login.
 - Login com Google (OAuth 2.0 + PKCE). Workspace de abas na `appDataFolder` do Drive; arquivos salvos explicitamente na pasta **Notepad**. Escopos: `drive.file` e `drive.appdata` (sem acesso ao resto do Drive).
 - Preview de Markdown ao vivo, com HTML bruto sempre exibido como texto e URLs filtradas.
 - **Imprimir / PDF**: usa o diálogo de impressão do navegador; escolha "Salvar como PDF".
 
-Atalhos: `Ctrl+S` salvar no Drive · `Ctrl+F`/`Ctrl+H` localizar/substituir · `Ctrl+G` ir para linha · `Ctrl+P` imprimir/PDF · `Ctrl+Alt+N` nova aba · `Ctrl+Alt+W` fechar aba · `Ctrl+Alt+M` preview (use `Cmd` no macOS).
+Atalhos: `Ctrl+S` salvar no Drive · `Ctrl+F`/`Ctrl+H` localizar/substituir · `Ctrl+G` ir para linha · `Ctrl+P` imprimir/PDF · `Ctrl+Alt+N` nova aba · `F2` renomear aba · `Ctrl+Alt+W` fechar aba · `Ctrl+Alt+M` preview (use `Cmd` no macOS).
 
 ## Requisitos do servidor
 

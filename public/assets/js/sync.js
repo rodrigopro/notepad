@@ -1,77 +1,91 @@
-// Sincronização do workspace com o Drive: debounce, fila offline e conflitos.
-// Toda dependência externa (API, timers, UI) é injetada para permitir teste.
+// Sincronização do workspace com o Drive: debounce, consulta periódica, fila offline e mescla automática.
+// Toda divergência é resolvida por mescla em três vias contra o último estado sincronizado (base),
+// então nada é sobrescrito às cegas. Dependências externas (API, timers, UI) são injetadas para teste.
 import { ApiError } from './api.js';
+import { mergeWorkspaces, fingerprint as defaultFp, isBlank } from './merge.js';
 
 export function createSync({
-  api, getWorkspace, applyRemote, onStatus, onConflict, onReauth,
-  onVersion, fingerprint = (d) => JSON.stringify(d), delay = 2000, retryDelay = 15000, setTimer = setTimeout, clearTimer = clearTimeout, isOnline = () => true,
+  api, getWorkspace, applyRemote, onStatus, onReauth, onBase,
+  merge = mergeWorkspaces, fingerprint = defaultFp,
+  delay = 1500, retryDelay = 15000, setTimer = setTimeout, clearTimer = clearTimeout, isOnline = () => true,
 }) {
   let enabled = false;
   let baseVersion = null;
+  let baseData = null; // conteúdo do Drive na versão baseVersion
   let timer = null;
   let running = false;
+  let wantPull = false;
   let generation = 0; // incrementa a cada edição; detecta mudança durante o envio
   let syncedGeneration = 0;
 
   const status = (s) => onStatus && onStatus(s);
+  const pending = () => syncedGeneration !== generation;
 
-  // `data` é o conteúdo que o Drive passou a ter nesta versão: sua impressão digital marca o "já sincronizado".
   function setBase(v, data) {
     baseVersion = v;
-    if (onVersion) onVersion(v, data === undefined ? null : fingerprint(data));
+    baseData = data;
+    if (onBase) onBase(v, data);
   }
 
   function arm(ms) {
     if (timer) clearTimer(timer);
-    timer = setTimer(() => { timer = null; return flush(); }, ms);
+    timer = setTimer(() => { timer = null; return run(); }, ms);
   }
 
-  function changed() {
-    generation++;
-    if (!enabled) return;
-    status('pending');
-    arm(delay);
+  /** Se o local difere da base e nada está marcado como pendente, marca para envio. */
+  function markIfDiverged() {
+    if (!pending() && (baseData === null || fingerprint(getWorkspace()) !== fingerprint(baseData))) generation++;
   }
 
-  async function resolveConflict(remote) {
-    status('conflict');
-    const choice = await onConflict(remote);
-    if (choice === 'remote') {
-      applyRemote(remote.data, 'replace');
-      setBase(remote.version, remote.data);
-      syncedGeneration = generation;
-      return true;
-    }
-    if (choice === 'copy') applyRemote(remote.data, 'merge');
-    if (choice !== 'local' && choice !== 'copy') return false;
+  /** O Drive está em `version` com `remote`: mescla com o local e decide se ainda há o que enviar. */
+  function reconcile(version, remote) {
+    const local = getWorkspace();
+    // Sem base, um local vazio (aparelho novo) se comporta como "intacto": o remoto prevalece por inteiro.
+    const base = baseData ?? (isBlank(local) ? local : null);
+    const { data, conflicts } = merge(base, local, remote);
+    setBase(version, remote);
+    if (fingerprint(data) !== fingerprint(local) || conflicts) applyRemote(data, conflicts);
+    if (fingerprint(data) === fingerprint(remote)) syncedGeneration = generation;
+    else generation++; // o resultado tem algo que o Drive ainda não tem
+  }
+
+  async function pull() {
+    const r = await api.getWorkspace(baseData !== null ? baseVersion : null);
+    if (!r.exists) { setBase(null, null); markIfDiverged(); return; }
+    if (r.unchanged) { markIfDiverged(); return; }
+    reconcile(r.version, r.data);
+  }
+
+  async function push() {
+    const target = generation;
     const sent = getWorkspace();
-    const res = await api.saveWorkspace(sent, remote.version, true);
-    setBase(res.version, sent);
-    syncedGeneration = generation;
-    return true;
+    try {
+      const res = await api.saveWorkspace(sent, baseVersion);
+      setBase(res.version, sent);
+      syncedGeneration = target; // se houve edição durante o envio, o laço envia de novo
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 409)) throw e;
+      const d = e.data || {};
+      if (d.data && typeof d.data === 'object' && typeof d.version === 'string') reconcile(d.version, d.data);
+      else wantPull = true;
+    }
   }
 
-  async function flush() {
+  async function run() {
     if (!enabled || running) return;
-    if (!isOnline()) { status('offline'); return; }
+    if (!isOnline()) { if (pending() || wantPull) status('offline'); return; }
+    if (timer) { clearTimer(timer); timer = null; }
     running = true;
+    let pulling = false;
     try {
-      while (syncedGeneration !== generation) {
-        const target = generation;
+      for (let rounds = 0; wantPull || pending(); rounds++) {
+        if (rounds >= 8) { arm(retryDelay); status('pending'); return; } // Drive mudando sem parar: tenta depois
         status('syncing');
-        try {
-          const sent = getWorkspace();
-          const res = await api.saveWorkspace(sent, baseVersion);
-          setBase(res.version, sent);
-          syncedGeneration = target;
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 409) {
-            if (!(await resolveConflict(e.data))) { status('conflict'); return; }
-          } else throw e;
-        }
+        if (wantPull) { wantPull = false; pulling = true; await pull(); pulling = false; } else await push();
       }
       status('synced');
     } catch (e) {
+      if (pulling) wantPull = true;
       if (e instanceof ApiError && e.status === 401) {
         enabled = false;
         status('reauth');
@@ -88,51 +102,32 @@ export function createSync({
   }
 
   return {
-    changed,
-    flush,
-    get pending() { return syncedGeneration !== generation; },
-    /** Chamado após login: compara local x remoto e decide o ponto de partida. */
-    async start(localHasContent, knownVersion = null, knownFp = null) {
+    get pending() { return pending(); },
+    get enabled() { return enabled; },
+    /** Edição local: envia após uma pausa na digitação. */
+    changed() {
+      generation++;
+      if (!enabled) return;
+      status('pending');
+      arm(delay);
+    },
+    /** Envia já o que estiver pendente (ex.: a página vai ficar oculta). */
+    flush() { return run(); },
+    /** Busca mudanças feitas em outros aparelhos (e envia as pendentes). */
+    pull() { if (!enabled) return Promise.resolve(); wantPull = true; return run(); },
+    /** Após o login. `base`: {version, data} do último sync deste usuário neste navegador, ou null. */
+    start(base = null) {
       enabled = true;
-      status('syncing');
-      try {
-        const remote = await api.getWorkspace();
-        if (!remote.exists) {
-          setBase(null);
-          generation++;
-        } else {
-          const remoteFp = fingerprint(remote.data);
-          const localFp = fingerprint(getWorkspace());
-          // A versão do Drive pode mudar sem o conteúdo mudar; por isso o conteúdo decide primeiro.
-          if (remoteFp === localFp) {
-            setBase(remote.version, remote.data); // já iguais: nada a enviar nem a perguntar
-            syncedGeneration = generation;
-          } else if (knownVersion !== null && knownVersion === remote.version) {
-            setBase(remote.version, remote.data);
-            generation++; // local descende desta versão: o local vence, sem perguntar
-          } else if (knownFp !== null && localFp === knownFp) {
-            applyRemote(remote.data, 'replace'); // local intacto desde o último sync; só o remoto mudou
-            setBase(remote.version, remote.data);
-            syncedGeneration = generation;
-          } else if (knownFp !== null && remoteFp === knownFp) {
-            setBase(remote.version, remote.data);
-            generation++; // remoto intacto desde o último sync; só o local mudou
-          } else if (localHasContent) {
-            setBase(remote.version, remote.data);
-            if (!(await resolveConflict({ data: remote.data, version: remote.version }))) { status('conflict'); return; }
-          } else {
-            setBase(remote.version, remote.data);
-            applyRemote(remote.data, 'replace');
-            syncedGeneration = generation;
-          }
-        }
-        await flush();
-        if (syncedGeneration === generation) status('synced');
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) { enabled = false; status('reauth'); if (onReauth) onReauth(); } else { status('offline'); arm(retryDelay); }
-      }
+      setBase(base ? base.version : null, base ? base.data : null);
+      wantPull = true;
+      return run();
+    },
+    /** Outra aba deste navegador gravou estado mais novo e esta o adotou: herda a base dela. */
+    adopt(base) {
+      setBase(base ? base.version : null, base ? base.data : null);
+      syncedGeneration = generation; // quem gravou é que envia; ao voltar a ficar visível, esta confere
     },
     stop() { enabled = false; if (timer) clearTimer(timer); timer = null; status('local'); },
-    online() { if (enabled && this.pending) flush(); },
+    online() { if (enabled) { wantPull = true; run(); } },
   };
 }

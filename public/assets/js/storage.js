@@ -1,7 +1,7 @@
 // localStorage defensivo: pode lançar exceção (modo privado, bloqueado, cheio).
-const KEY = 'notepad.workspace.v1';
+export const KEY = 'notepad.workspace.v1';
 
-export function createStorage(backend) {
+export function createStorage(backend, key = KEY) {
   let ok = true;
   const get = () => {
     try { return backend || globalThis.localStorage; } catch { return null; }
@@ -10,7 +10,7 @@ export function createStorage(backend) {
     get available() { return ok; },
     load() {
       try {
-        const raw = get().getItem(KEY);
+        const raw = get().getItem(key);
         return raw ? JSON.parse(raw) : null;
       } catch {
         return null;
@@ -18,7 +18,7 @@ export function createStorage(backend) {
     },
     save(data) {
       try {
-        get().setItem(KEY, JSON.stringify(data));
+        get().setItem(key, JSON.stringify(data));
         ok = true;
       } catch {
         ok = false;

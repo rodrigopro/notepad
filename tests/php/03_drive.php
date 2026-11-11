@@ -72,6 +72,19 @@ test('workspace: vazio, criar, ler, atualizar', function () use ($ws) {
     eq($r['status'], 200);
     ok(json_decode($r['body'], true)['version'] !== $v1, 'versão deve mudar');
 });
+test('workspace: known igual à versão atual não baixa o conteúdo', function () use ($ws) {
+    $store = []; $log = []; fake_drive($store, $log);
+    $c = session_cookies();
+    $v = json_decode(np_dispatch(post('drive/workspace/save', ['data' => $ws, 'baseVersion' => null], ['cookies' => $c]))['body'], true)['version'];
+    $log = [];
+    $d = json_decode(np_dispatch(req(['query' => ['r' => 'drive/workspace', 'known' => $v], 'cookies' => $c]))['body'], true);
+    eq($d, ['exists' => true, 'version' => $v, 'unchanged' => true]);
+    ok(!array_filter($log, fn($l) => str_contains($l[1], 'alt=media')), 'sem download');
+    $d = json_decode(np_dispatch(req(['query' => ['r' => 'drive/workspace', 'known' => '999'], 'cookies' => $c]))['body'], true);
+    eq($d['data'], $ws, 'versão diferente devolve o conteúdo');
+    $d = json_decode(np_dispatch(req(['query' => ['r' => 'drive/workspace', 'known' => "x' or 1"], 'cookies' => $c]))['body'], true);
+    eq($d['data'], $ws, 'known inválido é ignorado');
+});
 test('workspace: conflito não sobrescreve; force sobrescreve', function () use ($ws) {
     $store = []; $log = []; fake_drive($store, $log);
     $c = session_cookies();

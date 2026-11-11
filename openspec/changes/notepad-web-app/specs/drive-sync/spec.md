@@ -25,11 +25,26 @@ O sistema SHALL permitir "Salvar no Drive" e "Abrir do Drive" para arquivos cria
 - **THEN** um arquivo de texto é criado ou atualizado na pasta "Notepad" e a aba fica vinculada a ele
 
 ### Requirement: Resolução de conflitos
-O sistema SHALL detectar alteração concorrente (versão remota mais nova) e MUST NOT sobrescrever sem decisão do usuário.
+O sistema SHALL detectar alteração concorrente (versão remota mais nova) e mesclá-la automaticamente, aba por aba, contra o último estado sincronizado (mescla em três vias). O sistema MUST NOT descartar texto de nenhum dos lados.
 
-#### Scenario: Conflito
-- **WHEN** o workspace remoto foi modificado depois da última sincronização local
-- **THEN** o usuário escolhe entre manter local, manter remoto ou salvar cópia
+#### Scenario: Abas diferentes editadas em aparelhos diferentes
+- **WHEN** um aparelho edita a aba A e outro edita a aba B desde o último sync
+- **THEN** o Drive e os dois aparelhos ficam com as duas edições, sem perguntar nada
+
+#### Scenario: Mesma aba editada nos dois aparelhos
+- **WHEN** os dois lados mudaram o conteúdo da mesma aba de forma diferente
+- **THEN** a versão local fica na aba, a do outro aparelho vira uma aba "(conflito)" ao lado e o usuário é avisado
+
+#### Scenario: Aba apagada num aparelho
+- **WHEN** uma aba é fechada num aparelho e não foi editada no outro
+- **THEN** ela some nos dois; se foi editada no outro, é mantida
+
+### Requirement: Atualização contínua
+O sistema SHALL trazer as mudanças de outros aparelhos sem recarregar a página: ao voltar o foco, ao reconectar e periodicamente enquanto a página estiver visível, usando uma consulta leve que só baixa o conteúdo quando a versão mudou. Ao ocultar ou fechar a página, as alterações pendentes SHALL ser gravadas localmente e enviadas imediatamente.
+
+#### Scenario: Página aberta em outro aparelho
+- **WHEN** o usuário edita no celular e volta ao computador com a página já aberta
+- **THEN** o computador mostra a edição do celular antes de o usuário continuar escrevendo
 
 ### Requirement: Resiliência offline
 O sistema SHALL continuar editando offline e reenviar as alterações pendentes quando houver conexão e sessão válidas.

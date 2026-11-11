@@ -1,8 +1,9 @@
 import * as S from './state.js';
 import * as T from './text.js';
-import { createStorage } from './storage.js';
+import { createStorage, KEY } from './storage.js';
 import { createApi, ApiError } from './api.js';
 import { createSync } from './sync.js';
+import { fingerprint } from './merge.js';
 import { renderInto } from './markdown.js';
 
 const $ = (id) => document.getElementById(id);
@@ -10,27 +11,35 @@ const el = {
   tabs: $('tabs'), text: $('text'), gutter: $('gutter'), preview: $('preview'), toolbar: $('toolbar'),
   pos: $('st-pos'), size: $('st-size'), warn: $('st-warn'), sync: $('sync-state'), account: $('account'),
   findbar: $('findbar'), term: $('find-term'), repl: $('find-repl'), matchCase: $('find-case'), count: $('find-count'),
-  toast: $('toast'), dlgFiles: $('dlg-files'), fileList: $('file-list'), fileEmpty: $('file-empty'), dlgConflict: $('dlg-conflict'),
+  toast: $('toast'), dlgFiles: $('dlg-files'), fileList: $('file-list'), fileEmpty: $('file-empty'),
 };
 
 const storage = createStorage();
 const api = createApi();
 let user = null; // {name, picture} quando logado
-let meta = { syncVersion: null, syncFp: null, syncUser: null };
+// base: conteúdo do Drive no último sync. Fica na mesma chave que as abas, para os dois nunca se desencontrarem.
+let meta = { syncVersion: null, syncFp: null, syncUser: null, base: null };
 
 const SYNC_LABEL = {
   local: 'Local', pending: 'Alterações pendentes…', syncing: 'Sincronizando…', synced: 'Sincronizado',
-  offline: 'Offline — pendente', error: 'Erro ao sincronizar', conflict: 'Conflito', reauth: 'Entre novamente',
+  offline: 'Offline — pendente', error: 'Erro ao sincronizar', reauth: 'Entre novamente',
 };
 
 // ---------- Estado ----------
 const saved = storage.load();
 let state = S.deserialize(saved) || S.initialState();
-if (saved && saved.meta) meta = { syncVersion: String(saved.meta.syncVersion ?? ''), syncFp: saved.meta.syncFp == null ? null : String(saved.meta.syncFp), syncUser: String(saved.meta.syncUser ?? '') };
+if (saved && saved.meta) meta = readMeta(saved.meta);
+function readMeta(m) {
+  return {
+    syncVersion: m.syncVersion == null ? null : String(m.syncVersion), syncFp: m.syncFp == null ? null : String(m.syncFp),
+    syncUser: m.syncUser == null ? null : String(m.syncUser), base: m.base && S.deserialize(m.base) ? m.base : null,
+  };
+}
 let renderedTab = null;
 
 function persist() {
-  const ok = storage.save({ ...S.serialize(state), meta });
+  // Sem espaço para a base, grava só as abas: a próxima mescla fica conservadora (não apaga nada), mas nada se perde.
+  const ok = storage.save({ ...S.serialize(state), meta }) || (meta.base !== null && storage.save({ ...S.serialize(state), meta: { ...meta, base: null } }));
   el.warn.textContent = ok ? '' : 'Autosave local desativado (armazenamento indisponível)';
 }
 let persistTimer = null;
@@ -51,38 +60,42 @@ const tab = () => S.activeTab(state);
 const sync = createSync({
   api,
   getWorkspace: () => S.serialize(state),
-  applyRemote(data, mode) {
-    const remote = S.deserialize(data);
-    if (!remote) return;
-    if (mode === 'replace') state = remote;
-    else {
-      const extra = remote.tabs.map((t) => ({ ...t, id: S.newId(), title: t.title + ' (Drive)' }));
-      state = { ...state, tabs: [...state.tabs, ...extra].slice(0, S.MAX_TABS) };
-    }
-    renderedTab = null;
+  // Resultado da mescla com o Drive. Roda de forma síncrona logo após ler o estado: nenhuma tecla se perde.
+  applyRemote(data, conflicts) {
+    const next = S.deserialize(data);
+    if (!next) return;
+    replaceState(next);
     persist();
-    renderAll();
+    if (conflicts) toast(`${conflicts} aba(s) foram editadas em dois lugares ao mesmo tempo. Nada foi perdido: a outra versão está na aba "(conflito)" ao lado.`);
   },
   onStatus(s) {
     el.sync.textContent = SYNC_LABEL[s] || s;
     el.sync.dataset.s = s;
   },
-  onConflict: askConflict,
   onReauth() { toast('Sessão do Google expirada. Entre novamente — seu conteúdo local está preservado.'); renderAccount(); },
-  // Só o que importa ao conflito: aba ativa e modo preview diferem entre navegadores sem serem divergência.
-  fingerprint(d) {
-    const tabs = d && Array.isArray(d.tabs) ? d.tabs : [];
-    return JSON.stringify(tabs.map((t) => [t.id, t.title, t.content, t.savedContent, t.driveId || null]));
+  onBase(version, data) {
+    meta = { syncVersion: version, syncFp: null, syncUser: user ? user.id : null, base: data };
+    persistSoon();
   },
-  onVersion(v, fp) { meta = { syncVersion: v, syncFp: fp, syncUser: user ? user.id : null }; persistSoon(); },
 });
 
-function askConflict() {
-  return new Promise((resolve) => {
-    el.dlgConflict.addEventListener('close', () => resolve(el.dlgConflict.returnValue || 'local'), { once: true });
-    el.dlgConflict.returnValue = '';
-    el.dlgConflict.showModal();
-  });
+/** Troca o estado inteiro (vindo do Drive ou de outra aba) sem tirar o cursor do lugar quando possível. */
+function replaceState(next) {
+  const sameTab = next.active === state.active && renderedTab === state.active;
+  const { selectionStart: a, selectionEnd: b, scrollTop } = el.text;
+  state = next;
+  if (!sameTab) { renderedTab = null; renderTabs(); return; }
+  renderTabs();
+  const content = tab().content;
+  if (el.text.value !== content) {
+    el.text.value = content;
+    if (document.activeElement === el.text) el.text.setSelectionRange(Math.min(a, content.length), Math.min(b, content.length));
+    el.text.scrollTop = scrollTop;
+    updateGutter(true);
+    updateStatus();
+    schedulePreview();
+  }
+  updatePreviewVisibility();
 }
 
 // ---------- Toast ----------
@@ -108,10 +121,17 @@ function renderTabs() {
     d.setAttribute('role', 'tab');
     d.setAttribute('aria-selected', String(t.id === state.active));
     d.dataset.id = t.id;
-    d.draggable = true;
-    const title = document.createElement('button');
-    title.type = 'button'; title.className = 'title'; title.textContent = t.title; title.title = 'Duplo clique para renomear';
-    d.append(title);
+    d.draggable = !renaming || renaming.id !== t.id;
+    if (renaming && renaming.id === t.id) {
+      const input = document.createElement('input');
+      input.type = 'text'; input.className = 'rename'; input.value = renaming.value; input.maxLength = 120;
+      input.setAttribute('aria-label', 'Novo nome da aba'); input.size = Math.max(8, Math.min(30, renaming.value.length + 1));
+      d.append(input);
+    } else {
+      const title = document.createElement('button');
+      title.type = 'button'; title.className = 'title'; title.textContent = t.title; title.title = 'Duplo clique ou F2 para renomear';
+      d.append(title);
+    }
     if (S.isDirty(t) && (t.driveId || !user)) {
       const dot = document.createElement('span');
       dot.className = 'dirty'; dot.textContent = '●'; dot.title = 'Não salvo'; d.append(dot);
@@ -121,8 +141,16 @@ function renderTabs() {
     d.append(close);
     frag.append(d);
   }
+  const focusRename = renaming && document.activeElement && document.activeElement.classList.contains('rename');
+  const sel = focusRename ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
   el.tabs.replaceChildren(frag);
   el.tabs.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const input = el.tabs.querySelector('input.rename');
+  if (input && (focusRename || renaming.fresh)) {
+    input.focus();
+    if (sel) input.setSelectionRange(sel[0], sel[1]); else input.select();
+    renaming.fresh = false;
+  }
   if (renderedTab !== state.active) loadEditor();
 }
 
@@ -141,16 +169,52 @@ function renderAll() {
 
 el.tabs.addEventListener('click', (e) => {
   const d = e.target.closest('.tab');
-  if (!d) return;
+  if (!d || e.target.classList.contains('rename')) return;
   if (e.target.classList.contains('close')) closeTab(d.dataset.id);
   else { commit(S.setActive(state, d.dataset.id)); el.text.focus(); }
 });
 el.tabs.addEventListener('dblclick', (e) => {
   const d = e.target.closest('.tab');
-  if (!d || e.target.classList.contains('close')) return;
-  const t = state.tabs.find((x) => x.id === d.dataset.id);
-  const name = prompt('Renomear aba:', t.title);
-  if (name !== null) commit(S.renameTab(state, t.id, name));
+  if (!d || e.target.classList.contains('close') || e.target.classList.contains('rename')) return;
+  startRename(d.dataset.id);
+});
+
+// ---------- Renomear (direto na aba) ----------
+let renaming = null; // { id, value, fresh }
+function startRename(id = state.active) {
+  const t = state.tabs.find((x) => x.id === id);
+  if (!t) return;
+  if (state.active !== id) state = S.setActive(state, id);
+  renaming = { id, value: t.title, fresh: true };
+  renderTabs();
+}
+function finishRename(save) {
+  if (!renaming) return;
+  const { id, value } = renaming;
+  renaming = null;
+  if (save && state.tabs.some((t) => t.id === id)) {
+    const next = S.renameTab(state, id, value); // nome vazio mantém o anterior
+    if (next !== state && next.tabs.find((t) => t.id === id).title !== state.tabs.find((t) => t.id === id).title) { commit(next); el.text.focus(); return; }
+  }
+  renderTabs();
+  el.text.focus();
+}
+el.tabs.addEventListener('input', (e) => {
+  if (!renaming || !e.target.classList.contains('rename')) return;
+  renaming.value = e.target.value;
+  e.target.size = Math.max(8, Math.min(30, e.target.value.length + 1));
+});
+el.tabs.addEventListener('keydown', (e) => {
+  if (!renaming || !e.target.classList.contains('rename')) return;
+  if (e.key === 'Enter') { e.preventDefault(); finishRename(true); }
+  else if (e.key === 'Escape') { e.preventDefault(); finishRename(false); }
+  e.stopPropagation(); // atalhos globais não agem enquanto digita o nome
+});
+el.tabs.addEventListener('focusout', (e) => {
+  // Re-render durante a edição (ex.: sync) troca o input; só conclui se o foco saiu de fato.
+  if (renaming && e.target.classList.contains('rename')) {
+    setTimeout(() => { if (renaming && !(document.activeElement && document.activeElement.classList.contains('rename'))) finishRename(true); });
+  }
 });
 el.tabs.addEventListener('auxclick', (e) => {
   const d = e.target.closest('.tab');
@@ -327,18 +391,28 @@ async function login() {
     if (me.authenticated) {
       user = { name: me.name, picture: me.picture, id: me.uid };
       renderAccount();
-      const hasContent = state.tabs.some((t) => t.content !== '');
-      const known = meta.syncUser === user.id ? meta.syncVersion || null : null;
-      await sync.start(hasContent, known, meta.syncUser === user.id ? meta.syncFp ?? null : null);
+      await sync.start(storedBase());
       return;
     }
   } catch { /* offline: segue em modo local */ }
   renderAccount();
 }
 
+/** Base da mescla salva neste navegador para o usuário atual (null se não houver). */
+function storedBase() {
+  if (meta.syncUser !== user.id) return null;
+  if (meta.syncVersion && meta.base) return { version: meta.syncVersion, data: meta.base };
+  // Migração do formato antigo (só a impressão digital): se o local está intacto desde então, ele é a base.
+  if (meta.syncVersion && meta.syncFp && meta.syncFp === legacyFp(S.serialize(state))) {
+    return { version: meta.syncVersion, data: S.serialize(state) };
+  }
+  return null;
+}
+const legacyFp = (d) => JSON.stringify(d.tabs.map((t) => [t.id, t.title, t.content, t.savedContent, t.driveId || null]));
+
 async function logout() {
   try { await api.logout(); } catch { /* cookie expira de qualquer forma */ }
-  user = null; meta = { syncVersion: null, syncFp: null, syncUser: null };
+  user = null; meta = { syncVersion: null, syncFp: null, syncUser: null, base: null };
   sync.stop(); persist(); renderAccount(); renderTabs();
   toast('Você saiu. As abas continuam neste navegador.');
 }
@@ -403,6 +477,7 @@ const actions = {
   'open-drive': openFromDrive,
   'save-drive': saveToDrive,
   find: showFind,
+  rename: () => startRename(),
   goto: gotoLine,
   preview: togglePreview,
   print: printPreview,
@@ -417,6 +492,7 @@ el.account.addEventListener('click', (e) => {
   if (a && actions[a.dataset.action]) actions[a.dataset.action]();
 });
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'F2' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); startRename(); return; }
   const mod = e.ctrlKey || e.metaKey;
   if (!mod) return;
   const k = e.key.toLowerCase();
@@ -433,7 +509,34 @@ window.addEventListener('online', () => sync.online());
 window.addEventListener('offline', () => { if (user) el.sync.textContent = SYNC_LABEL.offline; });
 window.addEventListener('beforeunload', (e) => {
   persist();
-  if (user && sync.pending) { e.preventDefault(); e.returnValue = ''; }
+  if (user && sync.pending) { sync.flush(); e.preventDefault(); e.returnValue = ''; }
+});
+// No celular, trocar de app ou bloquear a tela não dispara beforeunload: salva e envia já ao ocultar.
+function leaving() {
+  clearTimeout(persistTimer);
+  persist();
+  if (user) sync.flush();
+}
+window.addEventListener('pagehide', leaving);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) leaving();
+  else if (user) sync.pull(); // voltou: traz o que foi feito em outros aparelhos
+});
+window.addEventListener('focus', () => { if (user && !document.hidden) sync.pull(); });
+// Com a página visível, confere periodicamente se outro aparelho mudou algo (consulta leve, sem baixar conteúdo).
+setInterval(() => { if (user && !document.hidden) sync.pull(); }, 30000);
+
+// Outra aba deste navegador gravou: a aba oculta adota o estado dela, para não sobrescrevê-lo depois com dados velhos.
+window.addEventListener('storage', (e) => {
+  if (e.key !== KEY || !e.newValue || !document.hidden) return;
+  let raw;
+  try { raw = JSON.parse(e.newValue); } catch { return; }
+  const next = S.deserialize(raw);
+  if (!next || fingerprint(S.serialize(next)) === fingerprint(S.serialize(state)) && next.active === state.active) return;
+  clearTimeout(persistTimer);
+  replaceState(next);
+  meta = readMeta(raw.meta || {});
+  if (user) sync.adopt(meta.syncUser === user.id && meta.syncVersion && meta.base ? { version: meta.syncVersion, data: meta.base } : null);
 });
 
 // ---------- Início ----------

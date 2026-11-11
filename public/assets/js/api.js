@@ -15,6 +15,8 @@ export function createApi(fetchFn = globalThis.fetch.bind(globalThis), base = 'a
     if (method !== 'GET') {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body ?? {});
+      // keepalive deixa o envio terminar mesmo se a página for fechada/oculta; o navegador limita a ~64 KB.
+      if (init.body.length < 60000) init.keepalive = true;
     }
     const res = await fetchFn(`${base}?${qs}`, init); // rede indisponível lança TypeError
     let data = null;
@@ -26,7 +28,7 @@ export function createApi(fetchFn = globalThis.fetch.bind(globalThis), base = 'a
     me: () => call('auth/me'),
     exchange: (code, state) => call('auth/exchange', { method: 'POST', body: { code, state } }),
     logout: () => call('auth/logout', { method: 'POST' }),
-    getWorkspace: () => call('drive/workspace'),
+    getWorkspace: (known = null) => call('drive/workspace', { query: known ? { known } : {} }),
     saveWorkspace: (data, baseVersion, force = false) => call('drive/workspace/save', { method: 'POST', body: { data, baseVersion, force } }),
     listFiles: () => call('drive/files'),
     openFile: (id) => call('drive/file', { query: { id } }),

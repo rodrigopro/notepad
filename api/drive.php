@@ -56,9 +56,15 @@ function np_ws_find(string $token): ?array {
 }
 
 function np_h_ws_get(array $req): array {
-    return np_with_drive($req, function (string $token): array {
+    // `known`: versão que o cliente já tem; se ainda for a atual, evita baixar o conteúdo (consulta periódica barata).
+    $known = $req['query']['known'] ?? null;
+    $known = is_string($known) && preg_match('/^[0-9]{1,32}$/', $known) === 1 ? $known : null;
+    return np_with_drive($req, function (string $token) use ($known): array {
         $f = np_ws_find($token);
         if ($f === null) { return np_json(200, ['exists' => false]); }
+        if ($known !== null && $known === (string) $f['version']) {
+            return np_json(200, ['exists' => true, 'version' => $known, 'unchanged' => true]);
+        }
         $r = np_check(np_drive('GET', '/files/' . $f['id'], $token, ['alt' => 'media']));
         $data = json_decode($r['body'], true);
         if (!is_array($data)) { return np_error(502, 'bad_remote_data'); }
